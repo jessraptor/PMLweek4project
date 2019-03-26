@@ -1,0 +1,146 @@
+---
+title: 'Week 4 Project:  Practical Machine Learning'
+author: "Jesica Scott"
+date: "March 25, 2019"
+output: html_document
+---
+##Overview
+
+Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+##Loading Packages and Data
+
+First we must load all relevant packages.
+
+```{r, echo=FALSE}
+library(caret);library(lattice);library(ggplot2);library(rpart.plot); library(rpart)
+library(rattle);library(RColorBrewer);library(randomForest);library(corrplot)
+```
+
+Then we upload the data and check it out with a few exploratory functions.
+
+```{r, echo=TRUE}
+train_data<-read.csv('./pml-training.csv', header=T)
+val_data<-read.csv('./pml-testing.csv', header=T)
+
+dim(train_data)
+dim(val_data)
+
+head(val_data)
+tail(train_data)
+```
+
+Next we clean the datasets by removing NA or missing values and redo some of the exploratory functions to see how the data has changed.
+
+```{r, echo=TRUE}
+trainData<- train_data[, colSums(is.na(train_data)) == 0]
+valData <- val_data[, colSums(is.na(val_data)) == 0]
+
+dim(trainData)
+dim(train_data)
+dim(valData)
+dim(val_data)
+```
+
+##The Model
+
+First, we divide the data into the appropriate training and test data sets.
+
+```{r, echo=TRUE}
+trainData <- trainData[, -c(1:7)]
+valData <- valData[, -c(1:7)]
+
+set.seed(1234) 
+inTrain <- createDataPartition(trainData$classe, p = 0.7, list = FALSE)
+trainData <- trainData[inTrain, ]
+testData <- trainData[-inTrain, ]
+
+NZV <- nearZeroVar(trainData)
+trainData <- trainData[, -NZV]
+testData  <- testData[, -NZV]
+dim(trainData)
+```
+
+And then prepare a correlation plot.
+
+```{r, echo=TRUE}
+cor_mat <- cor(trainData[, c(-53)])
+corrplot(cor_mat, order = "FPC", method = "color", type = "upper", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+This correlation plot shows correlation of the variables in dark blue.
+
+To understand which variables are very highly correlated we can cut them off at a high percentage, 80% for example as well as call them out by name.
+
+```{r, echo=TRUE}
+corrVars= findCorrelation(cor_mat, cutoff=0.8)
+names(trainData)[corrVars]
+```
+We will use classification and random forest methodology in creating our models.
+
+```{r, echo=TRUE}
+set.seed(12345)
+treeModel <- rpart(classe ~ ., data=trainData, method="class")
+fancyRpartPlot(treeModel)
+```
+The dendrogram depicts the tree but we need to check its performance.  We can do this by checking it against the test data.
+```{r, echo=TRUE}
+prediction_treeModel <- predict(treeModel, testData, type = "class")
+confusion_matrix_tree <- confusionMatrix(prediction_treeModel, testData$classe)
+confusion_matrix_tree
+```
+This shows about 70% accuracy in the prediction by this model.  This can likely be improved by exploring other models.
+
+Next we will try doing so with random forests.
+
+```{r, echo=TRUE}
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modRF1 <- train(classe ~ ., data=trainData, method="rf", trControl=controlRF)
+modRF1$finalModel
+```
+Now we must check the random forest model against the test data as we did with the decision tree.
+```{r, echo=TRUE}
+predictRF1 <- predict(modRF1, newdata=testData)
+cmrf <- confusionMatrix(predictRF1, testData$classe)
+cmrf
+```
+Since the accuracy is extremely high resulting from this model (100%) we must consider the possibility that overfitting has occurred.
+
+```{r, echo=TRUE}
+plot(modRF1)
+```
+This does not seem to answer the question with clarity so we will move on to creating a generalized boosted regression model.
+```{r, echo=TRUE}
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modGBM  <- train(classe ~ ., data=trainData, method = "gbm", trControl = controlGBM, verbose = FALSE)
+modGBM$finalModel
+print(modGBM)
+```
+Then we will apply the test data set to the model.
+```{r, echo=TRUE}
+predictGBM <- predict(modGBM, newdata=testData)
+cmGBM <- confusionMatrix(predictGBM, testData$classe)
+cmGBM
+```
+The accuracy for this is showing to be abotu 97% which is still extremely high.  Since the random forest model shows to be the best and we wil use it on the validation data.
+
+```{r, echo=TRUE}
+Results <- predict(modRF1, newdata=validData)
+Results
+```
+This completes the projects and helps us to answer the quiz questions.
